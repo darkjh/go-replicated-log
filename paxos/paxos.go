@@ -74,6 +74,30 @@ type Paxos struct {
 	// Your data here.
 }
 
+// Structure that holds information of a single agreement instance
+type InstanceState struct {
+	// sequential id of this agreement instance
+	seq int
+
+	// proposer's state
+
+	// has the agreement been reached?
+	decided bool
+	n       int
+	value   interface{}
+
+	// acceptor's state
+
+	// largest n seen by the acceptor
+	nSeen int
+	// largest n and its value accepted
+	nAccept int
+	vAccept interface{}
+
+	// utils
+	mu sync.Mutex
+}
+
 //
 // call() sends an RPC to the rpcname handler on server srv
 // with arguments args, waits for the reply, and leaves the
