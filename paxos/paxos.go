@@ -68,10 +68,14 @@ type Paxos struct {
 	dead       bool
 	unreliable bool
 	rpcCount   int
-	peers      []string
-	me         int // index into peers[]
 
-	// Your data here.
+	// peer information
+	peers []string
+	me    int // index into peers[]
+
+	// paxos instance infomation
+	instances map[int]InstanceState
+	// TODO may need a heap for key ordering
 }
 
 // Structure that holds information of a single agreement instance
