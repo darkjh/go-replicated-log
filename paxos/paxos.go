@@ -102,6 +102,19 @@ type InstanceState struct {
 	mu sync.Mutex
 }
 
+type N struct {
+	peer int
+	n    int
+}
+
+func (n *N) isBigger(other N) bool {
+	if n.peer == other.peer {
+		return n.n > other.n
+	} else {
+		return n.peer > other.peer
+	}
+}
+
 //
 // call() sends an RPC to the rpcname handler on server srv
 // with arguments args, waits for the reply, and leaves the
