@@ -116,42 +116,6 @@ func (n *N) isBigger(other N) bool {
 }
 
 //
-// call() sends an RPC to the rpcname handler on server srv
-// with arguments args, waits for the reply, and leaves the
-// reply in reply. the reply argument should be a pointer
-// to a reply structure.
-//
-// the return value is true if the server responded, and false
-// if call() was not able to contact the server. in particular,
-// the replys contents are only valid if call() returned true.
-//
-// you should assume that call() will time out and return an
-// error after a while if it does not get a reply from the server.
-//
-// please use call() to send all RPCs, in client.go and server.go.
-// please do not change this function.
-//
-func call(srv string, name string, args interface{}, reply interface{}) bool {
-	c, err := rpc.Dial("unix", srv)
-	if err != nil {
-		err1 := err.(*net.OpError)
-		if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
-			fmt.Printf("paxos Dial() failed: %v\n", err1)
-		}
-		return false
-	}
-	defer c.Close()
-
-	err = c.Call(name, args, reply)
-	if err == nil {
-		return true
-	}
-
-	fmt.Println(err)
-	return false
-}
-
-//
 // the application wants paxos to start agreement on
 // instance seq, with proposed value v.
 // Start() returns right away; the application will
@@ -303,4 +267,75 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	}
 
 	return px
+}
+
+//-------------
+// RRC Messages
+//-------------
+
+type PrepareArgs struct {
+	Num N
+}
+
+type PrepareReply struct {
+	// prepare_ok
+	// prepare_reject
+	OK          bool
+	NumAccept   N
+	ValueAccept interface{}
+}
+
+type AcceptArgs struct {
+	Num   N
+	Value interface{}
+}
+
+type AcceptReply struct {
+	// accept_ok
+	// accept_reject
+	OK bool
+}
+
+type DecideArgs struct {
+	ValueDecided interface{}
+}
+
+type DecideReply struct {
+	OK bool
+}
+
+//
+// call() sends an RPC to the rpcname handler on server srv
+// with arguments args, waits for the reply, and leaves the
+// reply in reply. the reply argument should be a pointer
+// to a reply structure.
+//
+// the return value is true if the server responded, and false
+// if call() was not able to contact the server. in particular,
+// the replys contents are only valid if call() returned true.
+//
+// you should assume that call() will time out and return an
+// error after a while if it does not get a reply from the server.
+//
+// please use call() to send all RPCs, in client.go and server.go.
+// please do not change this function.
+//
+func call(srv string, name string, args interface{}, reply interface{}) bool {
+	c, err := rpc.Dial("unix", srv)
+	if err != nil {
+		err1 := err.(*net.OpError)
+		if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
+			fmt.Printf("paxos Dial() failed: %v\n", err1)
+		}
+		return false
+	}
+	defer c.Close()
+
+	err = c.Call(name, args, reply)
+	if err == nil {
+		return true
+	}
+
+	fmt.Println(err)
+	return false
 }
