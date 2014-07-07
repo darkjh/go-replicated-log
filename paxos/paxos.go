@@ -74,7 +74,8 @@ type Paxos struct {
 	me    int // index into peers[]
 
 	// paxos instance infomation
-	instances map[int]InstanceState
+	instanceLock sync.RWMutex
+	instances    map[int]*InstanceState
 	// TODO may need a heap for key ordering
 }
 
@@ -87,24 +88,56 @@ type InstanceState struct {
 
 	// has the agreement been reached?
 	decided bool
-	n       int
+	n       N
 	value   interface{}
 
 	// acceptor's state
 
 	// largest n seen by the acceptor
-	nSeen int
+	nSeen N
 	// largest n and its value accepted
-	nAccept int
+	nAccept N
 	vAccept interface{}
 
 	// utils
 	mu sync.Mutex
 }
 
+func NewInstanceState(seq int, value interface{}) *InstanceState {
+	return &InstanceState{
+		seq:     seq,
+		decided: false,
+		n:       -1,
+		value:   value,
+	}
+}
+
+func (in *InstanceState) alterValues(
+	nSeen N, nAccept N, vAccept interface{}) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if nSeen != nil {
+		in.nSeen = nSeen
+	}
+	if nAccept != nil {
+		in.nAccept = nAccept
+	}
+	if vAccept != nil {
+		in.vAccept = vAccept
+	}
+}
+
 type N struct {
 	peer int
 	n    int
+}
+
+func NewN(peer int, n int) *N {
+	return &N{peer: peer, n: n}
+}
+
+func NewN() *N {
+	return &N{peer: -1, n: -1}
 }
 
 func (n *N) isBigger(other N) bool {
@@ -269,9 +302,48 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	return px
 }
 
-//-------------
-// RRC Messages
-//-------------
+//--------------
+// Internal Impl
+//--------------
+
+// proposer logic
+
+// Main driver function of a paxos instance
+// Should run in its own thread
+func (px *Paxos) propose(seq int) {
+	instance := px.getInstance(seq)
+	for !instance.decided {
+		// prepare
+
+	}
+}
+
+// acceptor logic
+
+func (px *Paxos) accept() {
+
+}
+
+// utils
+func (px *Paxos) getInstance(seq int) InstanceState {
+	px.instanceLock.RLock()
+	defer px.instanceLock.RUnlock()
+	return px.instance[seq]
+}
+
+func (px *Paxos) putInstance(seq int, instance *InstanceState) {
+	px.instanceLock.Lock()
+	defer px.instanceLock.Unlock()
+	px.instances[seq] = instance
+}
+
+func (px *Paxos) hasMajority(n int) bool {
+	return n >= len(px.peers)/2+1
+}
+
+//------------------------
+// RRC Messages & hanlders
+//------------------------
 
 type PrepareArgs struct {
 	Seq int
