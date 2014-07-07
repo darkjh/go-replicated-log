@@ -274,6 +274,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 //-------------
 
 type PrepareArgs struct {
+	Seq int
 	Num N
 }
 
@@ -285,7 +286,23 @@ type PrepareReply struct {
 	ValueAccept interface{}
 }
 
+func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
+	seq := args.Seq
+	n := args.Num
+	instance := px.getInstance(seq)
+	if n.isBigger(instance.nSeen) {
+		// prepare_ok
+		reply.OK = true
+		reply.NumAccept = px.nAccept
+		reply.ValueAccept = px.vAccept
+	} else {
+		// prepare_reject
+		reply.OK = false
+	}
+}
+
 type AcceptArgs struct {
+	Seq   int
 	Num   N
 	Value interface{}
 }
@@ -296,7 +313,21 @@ type AcceptReply struct {
 	OK bool
 }
 
+func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
+	seq := args.Seq
+	n := args.Num
+	value := args.Value
+	instance := px.getInstance(seq)
+	if n.isBigger(instance.nSeen) || n == instance.nSeen {
+		reply.OK = true
+		instance.alterValues(n, n, value)
+	} else {
+		reply.OK = false
+	}
+}
+
 type DecideArgs struct {
+	Seq          int
 	ValueDecided interface{}
 }
 
