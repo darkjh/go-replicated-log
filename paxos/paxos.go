@@ -230,8 +230,12 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-	// Your code here.
-	return false, nil
+	instance, exists := px.instances[seq]
+	if !exists || !instance.decided {
+		println("!!!", px.me)
+		return false, nil
+	}
+	return true, instance.vAccept
 }
 
 //
