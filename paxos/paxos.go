@@ -88,15 +88,15 @@ type InstanceState struct {
 
 	// has the agreement been reached?
 	decided bool
-	n       N
+	n       *N
 	value   interface{}
 
 	// acceptor's state
 
 	// largest n seen by the acceptor
-	nSeen N
+	nSeen *N
 	// largest n and its value accepted
-	nAccept N
+	nAccept *N
 	vAccept interface{}
 
 	// utils
@@ -107,13 +107,15 @@ func NewInstanceState(seq int, value interface{}) *InstanceState {
 	return &InstanceState{
 		seq:     seq,
 		decided: false,
-		n:       -1,
+		n:       NewN(-1, -1),
 		value:   value,
+		nSeen:   NewN(-1, -1),
+		nAccept: NewN(-1, -1),
 	}
 }
 
 func (in *InstanceState) alterValues(
-	nSeen N, nAccept N, vAccept interface{}) {
+	nSeen *N, nAccept *N, vAccept *interface{}) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	if nSeen != nil {
@@ -123,28 +125,30 @@ func (in *InstanceState) alterValues(
 		in.nAccept = nAccept
 	}
 	if vAccept != nil {
-		in.vAccept = vAccept
+		in.vAccept = *vAccept
 	}
 }
 
+func (in *InstanceState) incrementN() {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.n.Num += 1
+}
+
 type N struct {
-	peer int
-	n    int
+	Peer int
+	Num  int
 }
 
 func NewN(peer int, n int) *N {
-	return &N{peer: peer, n: n}
+	return &N{Peer: peer, Num: n}
 }
 
-func NewN() *N {
-	return &N{peer: -1, n: -1}
-}
-
-func (n *N) isBigger(other N) bool {
-	if n.peer == other.peer {
-		return n.n > other.n
+func (n *N) isBigger(other *N) bool {
+	if n.Peer == other.Peer {
+		return n.Num > other.Num
 	} else {
-		return n.peer > other.peer
+		return n.Peer > other.Peer
 	}
 }
 
@@ -156,7 +160,13 @@ func (n *N) isBigger(other N) bool {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	// Your code here.
+	// TODO need check
+	//   - do not start for decided instances
+	//   - what to do when multiple peers start a instance in same time?
+	instance := NewInstanceState(seq, v)
+	px.putInstance(seq, instance)
+
+	go px.propose(seq)
 }
 
 //
@@ -245,8 +255,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px := &Paxos{}
 	px.peers = peers
 	px.me = me
-
-	// Your initialization code here.
+	px.instances = make(map[int]*InstanceState)
 
 	if rpcs != nil {
 		// caller will create socket &c
@@ -274,6 +283,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 				if err == nil && px.dead == false {
 					if px.unreliable && (rand.Int63()%1000) < 100 {
 						// discard the request.
+
 						conn.Close()
 					} else if px.unreliable && (rand.Int63()%1000) < 200 {
 						// process the request but force discard of reply.
@@ -314,7 +324,100 @@ func (px *Paxos) propose(seq int) {
 	instance := px.getInstance(seq)
 	for !instance.decided {
 		// prepare
+		instance.incrementN()
 
+		// for each peer
+		// do Preprare
+
+		// wait only for a majority to OK
+		maj := px.getMajority()
+		wg := sync.WaitGroup{}
+		wg.Add(maj)
+
+		prepareReplies := make([]*PrepareReply, len(px.peers))
+		for i, peer := range px.peers {
+			go func(i int, p string) {
+				// deal with negative waitgroup counter
+				// since we wait only for majority
+				defer func() {
+					recover()
+				}()
+
+				// `Prepare` call
+				var reply PrepareReply
+				args := PrepareArgs{seq, *instance.n}
+				rpcOk := call(p, "Paxos.Prepare", &args, &reply)
+				if rpcOk && reply.OK {
+					log.Println("Paxos -- Prepare OK: ", seq, p)
+					prepareReplies[i] = &reply
+					wg.Done()
+				}
+			}(i, peer)
+		}
+		wg.Wait()
+
+		// majority OK
+		// choose a value
+		choice := -1
+		n := *NewN(-1, -1)
+		for i, reply := range prepareReplies {
+			if reply == nil {
+				continue
+			}
+			num := reply.NumAccept
+			if num.Num < 0 {
+				continue
+			} else if num.isBigger(&n) {
+				choice = i
+				n = num
+			}
+		}
+
+		var value interface{}
+		var num N
+		if choice < 0 {
+			// choose own value
+			value = instance.value
+			num = *instance.n
+		} else {
+			value = prepareReplies[choice].ValueAccept
+			num = prepareReplies[choice].NumAccept
+		}
+
+		// for each peer
+		// do Accept
+		wg = sync.WaitGroup{}
+		wg.Add(maj)
+		for i, peer := range px.peers {
+			go func(i int, p string) {
+				// deal with negative waitgroup counter
+				// since we wait only for majority
+				defer func() {
+					recover()
+				}()
+
+				var reply AcceptReply
+				args := AcceptArgs{seq, num, value}
+				rpcOk := call(p, "Paxos.Accept", &args, &reply)
+				if rpcOk && reply.OK {
+					log.Println("Paxos -- Accept OK: ", seq, p)
+					wg.Done()
+				}
+			}(i, peer)
+		}
+		wg.Wait()
+
+		// decide
+		for _, peer := range px.peers {
+			go func(p string) {
+				var reply DecideReply
+				args := DecideArgs{seq, value}
+				call(p, "Paxos.Decide", &args, &reply)
+			}(peer)
+		}
+
+		instance.decided = true
+		log.Printf("Paxos -- Instance %d Decided on %s\n", seq, value)
 	}
 }
 
@@ -325,10 +428,10 @@ func (px *Paxos) accept() {
 }
 
 // utils
-func (px *Paxos) getInstance(seq int) InstanceState {
+func (px *Paxos) getInstance(seq int) *InstanceState {
 	px.instanceLock.RLock()
 	defer px.instanceLock.RUnlock()
-	return px.instance[seq]
+	return px.instances[seq]
 }
 
 func (px *Paxos) putInstance(seq int, instance *InstanceState) {
@@ -338,7 +441,11 @@ func (px *Paxos) putInstance(seq int, instance *InstanceState) {
 }
 
 func (px *Paxos) hasMajority(n int) bool {
-	return n >= len(px.peers)/2+1
+	return n >= px.getMajority()
+}
+
+func (px *Paxos) getMajority() int {
+	return len(px.peers)/2 + 1
 }
 
 //------------------------
@@ -361,16 +468,27 @@ type PrepareReply struct {
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	seq := args.Seq
 	n := args.Num
+
+	_, exists := px.instances[seq]
+	if exists == false {
+		px.instances[seq] = NewInstanceState(seq, nil)
+	}
+
 	instance := px.getInstance(seq)
 	if n.isBigger(instance.nSeen) {
 		// prepare_ok
 		reply.OK = true
-		reply.NumAccept = px.nAccept
-		reply.ValueAccept = px.vAccept
+		reply.NumAccept = *instance.nAccept
+		reply.ValueAccept = instance.vAccept
 	} else {
 		// prepare_reject
 		reply.OK = false
+		// piggy back the current value
+		reply.NumAccept = *instance.nAccept
+		reply.ValueAccept = instance.vAccept
 	}
+
+	return nil
 }
 
 type AcceptArgs struct {
@@ -390,12 +508,14 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	n := args.Num
 	value := args.Value
 	instance := px.getInstance(seq)
-	if n.isBigger(instance.nSeen) || n == instance.nSeen {
+	if n.isBigger(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
-		instance.alterValues(n, n, value)
+		instance.alterValues(&n, &n, &value)
 	} else {
 		reply.OK = false
 	}
+
+	return nil
 }
 
 type DecideArgs struct {
@@ -405,6 +525,16 @@ type DecideArgs struct {
 
 type DecideReply struct {
 	OK bool
+}
+
+func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
+	instance := px.getInstance(args.Seq)
+	if instance.vAccept != args.ValueDecided {
+		log.Printf("Paxos -- Decided value not consistent: %s, %s\n",
+			instance.vAccept, args.ValueDecided)
+	}
+	instance.decided = true
+	return nil
 }
 
 //
