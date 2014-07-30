@@ -239,7 +239,6 @@ func (px *Paxos) Min() int {
 func (px *Paxos) Status(seq int) (bool, interface{}) {
 	instance, exists := px.instances[seq]
 	if !exists || !instance.decided {
-		println("!!!", px.me)
 		return false, nil
 	}
 	return true, instance.vAccept
@@ -359,7 +358,7 @@ func (px *Paxos) propose(seq int) {
 				args := PrepareArgs{seq, *instance.n}
 				rpcOk := call(p, "Paxos.Prepare", &args, &reply)
 				if rpcOk && reply.OK {
-					log.Println("Paxos -- Prepare OK: ", seq, p)
+					log.Printf("Paxos -- Prepare OK: instance: %d, peer: %d", seq, i)
 					prepareReplies[i] = &reply
 					wg.Done()
 				}
@@ -411,7 +410,7 @@ func (px *Paxos) propose(seq int) {
 				args := AcceptArgs{seq, num, value}
 				rpcOk := call(p, "Paxos.Accept", &args, &reply)
 				if rpcOk && reply.OK {
-					log.Println("Paxos -- Accept OK: ", seq, p)
+					log.Printf("Paxos -- Accept OK: instance: %d, peer: %d", seq, i)
 					wg.Done()
 				}
 			}(i, peer)
@@ -491,12 +490,18 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		reply.OK = true
 		reply.NumAccept = *instance.nAccept
 		reply.ValueAccept = instance.vAccept
+		log.Printf(
+			"Paxos -- Prepare handle OK, seq: %d, peer: %d, n: %#v\n",
+			seq, px.me, structString(n))
 	} else {
 		// prepare_reject
 		reply.OK = false
 		// piggy back the current value
 		reply.NumAccept = *instance.nAccept
 		reply.ValueAccept = instance.vAccept
+		log.Printf(
+			"Paxos -- Prepare handle FAILED, seq: %d, peer: %d, np: %#v, n: %#v\n",
+			seq, px.me, structString(instance.nSeen), structString(n))
 	}
 
 	return nil
@@ -522,7 +527,13 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	if n.isBigger(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
 		instance.alterValues(&n, &n, &value)
+		log.Printf(
+			"Paxos -- Accept handle OK, seq: %d, peer: %d, n: %s, v: %s\n",
+			seq, px.me, structString(n), structString(value))
 	} else {
+		log.Printf(
+			"Paxos -- Accept handle FAIL, seq: %d, peer: %d, np: %s, n: %s\n",
+			seq, px.me, structString(instance.nSeen), structString(n))
 		reply.OK = false
 	}
 
@@ -582,4 +593,12 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 
 	fmt.Println(err)
 	return false
+}
+
+//----------------
+// Logging helpers
+//----------------
+
+func structString(s interface{}) string {
+	return fmt.Sprintf("%#v", s)
 }
