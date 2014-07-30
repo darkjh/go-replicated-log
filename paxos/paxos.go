@@ -135,6 +135,13 @@ func (in *InstanceState) incrementN() {
 	in.n.Num += 1
 }
 
+func (in *InstanceState) alterN(peer int, n int) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.n.Peer = peer
+	in.n.Num = n
+}
+
 type N struct {
 	Peer int
 	Num  int
@@ -327,8 +334,8 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 func (px *Paxos) propose(seq int) {
 	instance := px.getInstance(seq)
 	for !instance.decided {
-		// prepare
-		instance.incrementN()
+		// prepare n
+		instance.alterN(px.me, instance.n.Num+1)
 
 		// for each peer
 		// do Preprare
