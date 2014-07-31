@@ -101,6 +101,46 @@ func noTestSpeed(t *testing.T) {
 	fmt.Printf("20 agreements %v seconds\n", d.Seconds())
 }
 
+func TestN(t *testing.T) {
+	var big *N
+	var small *N
+
+	// same peer number
+	big = NewN(2, 3)
+	small = NewN(2, 1)
+	result := big.isBigger(small)
+	if !result {
+		t.Fail()
+	}
+
+	// different peer number
+	big = NewN(2, 3)
+	small = NewN(100, 2)
+	result = big.isBigger(small)
+	if !result {
+		t.Fail()
+	}
+
+	// peer number breaks the tie
+	big = NewN(2, 10)
+	small = NewN(1, 10)
+	result = big.isBigger(small)
+	if !result {
+		t.Fail()
+	}
+
+	// equality
+	result = *NewN(1, 1) == *NewN(1, 1)
+	if !result {
+		t.Fail()
+	}
+
+	result = *NewN(2, 1) == *NewN(1, 1)
+	if result {
+		t.Fail()
+	}
+}
+
 func TestBasic(t *testing.T) {
 	runtime.GOMAXPROCS(4)
 

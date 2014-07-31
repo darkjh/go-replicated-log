@@ -152,10 +152,10 @@ func NewN(peer int, n int) *N {
 }
 
 func (n *N) isBigger(other *N) bool {
-	if n.Peer == other.Peer {
-		return n.Num > other.Num
-	} else {
+	if n.Num == other.Num {
 		return n.Peer > other.Peer
+	} else {
+		return n.Num > other.Num
 	}
 }
 
