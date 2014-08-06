@@ -495,6 +495,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	if n.isBigger(instance.nSeen) {
 		// prepare_ok
 		reply.OK = true
+		instance.alterValues(&n, nil, nil)
 		reply.NumAccept = *instance.nAccept
 		reply.ValueAccept = instance.vAccept
 		log.Printf(
