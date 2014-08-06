@@ -358,7 +358,9 @@ func (px *Paxos) propose(seq int) {
 				args := PrepareArgs{seq, *instance.n}
 				rpcOk := call(p, "Paxos.Prepare", &args, &reply)
 				if rpcOk && reply.OK {
-					log.Printf("Paxos -- Prepare OK: instance: %d, peer: %d", seq, i)
+					log.Printf(
+						"Paxos -- Prepare OK on %d: instance: %d, from: %d",
+						px.me, seq, i)
 					prepareReplies[i] = &reply
 					wg.Done()
 				}
@@ -410,7 +412,9 @@ func (px *Paxos) propose(seq int) {
 				args := AcceptArgs{seq, num, value}
 				rpcOk := call(p, "Paxos.Accept", &args, &reply)
 				if rpcOk && reply.OK {
-					log.Printf("Paxos -- Accept OK: instance: %d, peer: %d", seq, i)
+					log.Printf(
+						"Paxos -- Accept OK on %d: instance: %d, from: %d",
+						px.me, seq, i)
 					wg.Done()
 				}
 			}(i, peer)
@@ -425,9 +429,6 @@ func (px *Paxos) propose(seq int) {
 				call(p, "Paxos.Decide", &args, &reply)
 			}(peer)
 		}
-
-		instance.decided = true
-		log.Printf("Paxos -- Instance %d Decided on %s\n", seq, value)
 	}
 }
 
@@ -552,10 +553,16 @@ type DecideReply struct {
 func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	instance := px.getInstance(args.Seq)
 	if instance.vAccept != args.ValueDecided {
-		log.Printf("Paxos -- Decided value not consistent: %s, %s\n",
-			instance.vAccept, args.ValueDecided)
+		log.Printf(
+			"Paxos -- Decided handle FAIL on %d, value not consistent: %s, %s\n",
+			px.me,
+			structString(instance.vAccept),
+			structString(args.ValueDecided))
 	}
 	instance.decided = true
+	instance.vAccept = args.ValueDecided
+	log.Printf("Paxos -- Decided handle OK on %d, value: %v",
+		px.me, args.ValueDecided)
 	return nil
 }
 
