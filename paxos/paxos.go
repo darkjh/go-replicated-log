@@ -168,12 +168,16 @@ func (n *N) isBigger(other *N) bool {
 //
 func (px *Paxos) Start(seq int, v interface{}) {
 	// TODO need check
-	//   - do not start for decided instances
 	//   - what to do when multiple peers start a instance in same time?
-	instance := NewInstanceState(seq, v)
-	px.putInstance(seq, instance)
+	instance, exists := px.getInstance(seq)
+	if !exists {
+		instance = NewInstanceState(seq, v)
+		px.putInstance(seq, instance)
+	}
 
-	go px.propose(seq)
+	if !instance.decided {
+		go px.propose(seq)
+	}
 }
 
 //
@@ -237,7 +241,7 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-	instance, exists := px.instances[seq]
+	instance, exists := px.getInstance(seq)
 	if !exists || !instance.decided {
 		return false, nil
 	}
@@ -331,9 +335,10 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 // Main driver function of a paxos instance
 // Should run in its own thread
 func (px *Paxos) propose(seq int) {
-	instance := px.getInstance(seq)
+	instance, _ := px.getInstance(seq)
 	for !instance.decided {
 		// prepare n
+		// TODO it's better to use acceptors value
 		instance.alterN(px.me, instance.n.Num+1)
 
 		// for each peer
@@ -439,10 +444,11 @@ func (px *Paxos) accept() {
 }
 
 // utils
-func (px *Paxos) getInstance(seq int) *InstanceState {
+func (px *Paxos) getInstance(seq int) (*InstanceState, bool) {
 	px.instanceLock.RLock()
 	defer px.instanceLock.RUnlock()
-	return px.instances[seq]
+	in, exists := px.instances[seq]
+	return in, exists
 }
 
 func (px *Paxos) putInstance(seq int, instance *InstanceState) {
@@ -485,7 +491,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		px.instances[seq] = NewInstanceState(seq, nil)
 	}
 
-	instance := px.getInstance(seq)
+	instance, _ := px.getInstance(seq)
 	if n.isBigger(instance.nSeen) {
 		// prepare_ok
 		reply.OK = true
@@ -524,7 +530,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	seq := args.Seq
 	n := args.Num
 	value := args.Value
-	instance := px.getInstance(seq)
+	instance, _ := px.getInstance(seq)
 	if n.isBigger(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
 		instance.alterValues(&n, &n, &value)
@@ -551,7 +557,7 @@ type DecideReply struct {
 }
 
 func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
-	instance := px.getInstance(args.Seq)
+	instance, _ := px.getInstance(args.Seq)
 	if instance.vAccept != args.ValueDecided {
 		log.Printf(
 			"Paxos -- Decided handle FAIL on %d, value not consistent: %s, %s\n",
