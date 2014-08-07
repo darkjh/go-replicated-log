@@ -61,6 +61,9 @@ import "syscall"
 import "sync"
 import "fmt"
 import "math/rand"
+import "sync/atomic"
+
+// import "time"
 
 type Paxos struct {
 	mu         sync.Mutex
@@ -336,7 +339,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 // Should run in its own thread
 func (px *Paxos) propose(seq int) {
 	instance, _ := px.getInstance(seq)
-	for !instance.decided {
+	for !instance.decided && !px.dead {
 		// prepare n
 		// TODO it's better to use acceptors value
 		instance.alterN(px.me, instance.n.Num+1)
@@ -345,18 +348,19 @@ func (px *Paxos) propose(seq int) {
 		// do Preprare
 
 		// wait only for a majority to OK
-		maj := px.getMajority()
-		wg := sync.WaitGroup{}
-		wg.Add(maj)
+		maj := int32(px.getMajority())
+		var signal struct{}
+
+		chanOk := make(chan struct{})
+		chanFail := make(chan struct{})
+
+		oks := new(int32)   // 0
+		fails := new(int32) // 0
 
 		prepareReplies := make([]*PrepareReply, len(px.peers))
 		for i, peer := range px.peers {
-			go func(i int, p string) {
-				// deal with negative waitgroup counter
-				// since we wait only for majority
-				defer func() {
-					recover()
-				}()
+			go func(i int, p string,
+				chanOk chan struct{}, chanFail chan struct{}) {
 
 				// `Prepare` call
 				var reply PrepareReply
@@ -367,11 +371,27 @@ func (px *Paxos) propose(seq int) {
 						"Paxos -- Prepare OK on %d: instance: %d, from: %d",
 						px.me, seq, i)
 					prepareReplies[i] = &reply
-					wg.Done()
+
+					atomic.AddInt32(oks, 1)
+					if *oks >= maj {
+						chanOk <- signal
+					}
+				} else {
+					atomic.AddInt32(fails, 1)
+					if *fails >= maj {
+						chanFail <- signal
+					}
 				}
-			}(i, peer)
+			}(i, peer, chanOk, chanFail)
 		}
-		wg.Wait()
+
+		select {
+		case <-chanOk:
+			break
+		case <-chanFail:
+			// re-propose
+			continue
+		}
 
 		// majority OK
 		// choose a value
@@ -403,16 +423,15 @@ func (px *Paxos) propose(seq int) {
 
 		// for each peer
 		// do Accept
-		wg = sync.WaitGroup{}
-		wg.Add(maj)
-		for i, peer := range px.peers {
-			go func(i int, p string) {
-				// deal with negative waitgroup counter
-				// since we wait only for majority
-				defer func() {
-					recover()
-				}()
+		chanOk = make(chan struct{})
+		chanFail = make(chan struct{})
 
+		oks = new(int32)   // 0
+		fails = new(int32) // 0
+
+		for i, peer := range px.peers {
+			go func(i int, p string,
+				chanOk chan struct{}, chanFail chan struct{}) {
 				var reply AcceptReply
 				args := AcceptArgs{seq, num, value}
 				rpcOk := call(p, "Paxos.Accept", &args, &reply)
@@ -420,11 +439,26 @@ func (px *Paxos) propose(seq int) {
 					log.Printf(
 						"Paxos -- Accept OK on %d: instance: %d, from: %d",
 						px.me, seq, i)
-					wg.Done()
+					atomic.AddInt32(oks, 1)
+					if *oks >= maj {
+						chanOk <- signal
+					}
+				} else {
+					atomic.AddInt32(fails, 1)
+					if *fails >= maj {
+						chanFail <- signal
+					}
 				}
-			}(i, peer)
+			}(i, peer, chanOk, chanFail)
 		}
-		wg.Wait()
+
+		select {
+		case <-chanOk:
+			break
+		case <-chanFail:
+			// re-propose
+			continue
+		}
 
 		// decide
 		for _, peer := range px.peers {
@@ -532,6 +566,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	n := args.Num
 	value := args.Value
 	instance, _ := px.getInstance(seq)
+	// TODO check null ptr here !!!
 	if n.isBigger(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
 		instance.alterValues(&n, &n, &value)
