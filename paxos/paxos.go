@@ -415,11 +415,10 @@ func (px *Paxos) propose(seq int) {
 		if choice < 0 {
 			// choose own value
 			value = instance.value
-			num = *instance.n
 		} else {
 			value = prepareReplies[choice].ValueAccept
-			num = prepareReplies[choice].NumAccept
 		}
+		num = *instance.n
 
 		// for each peer
 		// do Accept
