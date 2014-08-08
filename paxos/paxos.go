@@ -180,13 +180,8 @@ func (px *Paxos) Start(seq int, v interface{}) {
 		px.putInstance(seq, instance)
 	}
 
-	// TODO need to verify this approach
-	// TODO also need to update max in `Prepare` or `Accept`
-	px.maxLock.Lock()
-	if seq > px.max {
-		px.max = seq
-	}
-	px.maxLock.Unlock()
+	// update seen max seq
+	px.updateaMax(seq)
 
 	if !instance.decided {
 		go px.propose(seq)
@@ -529,6 +524,14 @@ func (px *Paxos) getMajority() int {
 	return len(px.peers)/2 + 1
 }
 
+func (px *Paxos) updateaMax(currentSeq int) {
+	px.maxLock.Lock()
+	defer px.maxLock.Unlock()
+	if currentSeq > px.max {
+		px.max = currentSeq
+	}
+}
+
 //------------------------
 // RRC Messages & hanlders
 //------------------------
@@ -549,6 +552,9 @@ type PrepareReply struct {
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	seq := args.Seq
 	n := args.Num
+
+	// update local max seen seq
+	px.updateaMax(seq)
 
 	instance, exists := px.instances[seq]
 	if !exists {
@@ -595,6 +601,9 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	seq := args.Seq
 	n := args.Num
 	value := args.Value
+
+	// update local max seen seq
+	px.updateaMax(seq)
 
 	instance, exists := px.getInstance(seq)
 	if !exists {
