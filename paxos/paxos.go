@@ -364,8 +364,16 @@ func (px *Paxos) propose(seq int) {
 
 				// `Prepare` call
 				var reply PrepareReply
+				var rpcOk bool
 				args := PrepareArgs{seq, *instance.n}
-				rpcOk := call(p, "Paxos.Prepare", &args, &reply)
+
+				if px.me == i {
+					res := px.Prepare(&args, &reply)
+					rpcOk = res == nil
+				} else {
+					rpcOk = call(p, "Paxos.Prepare", &args, &reply)
+				}
+
 				if rpcOk && reply.OK {
 					log.Printf(
 						"Paxos -- Prepare OK on %d: instance: %d, from: %d",
@@ -432,8 +440,16 @@ func (px *Paxos) propose(seq int) {
 			go func(i int, p string,
 				chanOk chan struct{}, chanFail chan struct{}) {
 				var reply AcceptReply
+				var rpcOk bool
 				args := AcceptArgs{seq, num, value}
-				rpcOk := call(p, "Paxos.Accept", &args, &reply)
+
+				if px.me == i {
+					res := px.Accept(&args, &reply)
+					rpcOk = res == nil
+				} else {
+					rpcOk = call(p, "Paxos.Accept", &args, &reply)
+				}
+
 				if rpcOk && reply.OK {
 					log.Printf(
 						"Paxos -- Accept OK on %d: instance: %d, from: %d",
@@ -460,12 +476,16 @@ func (px *Paxos) propose(seq int) {
 		}
 
 		// decide
-		for _, peer := range px.peers {
-			go func(p string) {
+		for i, peer := range px.peers {
+			go func(i int, p string) {
 				var reply DecideReply
 				args := DecideArgs{seq, value}
-				call(p, "Paxos.Decide", &args, &reply)
-			}(peer)
+				if px.me == i {
+					px.Decide(&args, &reply)
+				} else {
+					call(p, "Paxos.Decide", &args, &reply)
+				}
+			}(i, peer)
 		}
 	}
 }
