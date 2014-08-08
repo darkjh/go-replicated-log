@@ -79,7 +79,9 @@ type Paxos struct {
 	// paxos instance infomation
 	instanceLock sync.RWMutex
 	instances    map[int]*InstanceState
-	// TODO may need a heap for key ordering
+
+	max     int
+	maxLock sync.Mutex
 }
 
 // Structure that holds information of a single agreement instance
@@ -178,6 +180,13 @@ func (px *Paxos) Start(seq int, v interface{}) {
 		px.putInstance(seq, instance)
 	}
 
+	// TODO need to verify this approach
+	px.maxLock.Lock()
+	if seq > px.max {
+		px.max = seq
+	}
+	px.maxLock.Unlock()
+
 	if !instance.decided {
 		go px.propose(seq)
 	}
@@ -199,8 +208,9 @@ func (px *Paxos) Done(seq int) {
 // this peer.
 //
 func (px *Paxos) Max() int {
-	// Your code here.
-	return 0
+	px.maxLock.Lock()
+	defer px.maxLock.Unlock()
+	return px.max
 }
 
 //
