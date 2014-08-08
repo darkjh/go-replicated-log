@@ -181,6 +181,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 
 	// TODO need to verify this approach
+	// TODO also need to update max in `Prepare` or `Accept`
 	px.maxLock.Lock()
 	if seq > px.max {
 		px.max = seq
@@ -549,12 +550,12 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	seq := args.Seq
 	n := args.Num
 
-	_, exists := px.instances[seq]
-	if exists == false {
-		px.instances[seq] = NewInstanceState(seq, nil)
+	instance, exists := px.instances[seq]
+	if !exists {
+		instance = NewInstanceState(seq, nil)
+		px.putInstance(seq, instance)
 	}
 
-	instance, _ := px.getInstance(seq)
 	if n.isBigger(instance.nSeen) {
 		// prepare_ok
 		reply.OK = true
@@ -594,8 +595,13 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	seq := args.Seq
 	n := args.Num
 	value := args.Value
-	instance, _ := px.getInstance(seq)
-	// TODO check null ptr here !!!
+
+	instance, exists := px.getInstance(seq)
+	if !exists {
+		instance = NewInstanceState(seq, nil)
+		px.putInstance(seq, instance)
+	}
+
 	if n.isBigger(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
 		instance.alterValues(&n, &n, &value)
