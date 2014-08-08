@@ -156,7 +156,7 @@ func NewN(peer int, n int) *N {
 	return &N{Peer: peer, Num: n}
 }
 
-func (n *N) isBigger(other *N) bool {
+func (n *N) isBiggerThan(other *N) bool {
 	if n.Num == other.Num {
 		return n.Peer > other.Peer
 	} else {
@@ -418,7 +418,7 @@ func (px *Paxos) propose(seq int) {
 			num := reply.NumAccept
 			if num.Num < 0 {
 				continue
-			} else if num.isBigger(&n) {
+			} else if num.isBiggerThan(&n) {
 				choice = i
 				n = num
 			}
@@ -562,7 +562,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		px.putInstance(seq, instance)
 	}
 
-	if n.isBigger(instance.nSeen) {
+	if n.isBiggerThan(instance.nSeen) {
 		// prepare_ok
 		reply.OK = true
 		instance.alterValues(&n, nil, nil)
@@ -611,7 +611,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 		px.putInstance(seq, instance)
 	}
 
-	if n.isBigger(instance.nSeen) || n == *instance.nSeen {
+	if n.isBiggerThan(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
 		instance.alterValues(&n, &n, &value)
 		log.Printf(

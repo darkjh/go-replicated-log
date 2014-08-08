@@ -108,7 +108,7 @@ func TestN(t *testing.T) {
 	// same peer number
 	big = NewN(2, 3)
 	small = NewN(2, 1)
-	result := big.isBigger(small)
+	result := big.isBiggerThan(small)
 	if !result {
 		t.Fail()
 	}
@@ -116,7 +116,7 @@ func TestN(t *testing.T) {
 	// different peer number
 	big = NewN(2, 3)
 	small = NewN(100, 2)
-	result = big.isBigger(small)
+	result = big.isBiggerThan(small)
 	if !result {
 		t.Fail()
 	}
@@ -124,7 +124,7 @@ func TestN(t *testing.T) {
 	// peer number breaks the tie
 	big = NewN(2, 10)
 	small = NewN(1, 10)
-	result = big.isBigger(small)
+	result = big.isBiggerThan(small)
 	if !result {
 		t.Fail()
 	}
