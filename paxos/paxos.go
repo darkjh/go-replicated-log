@@ -382,7 +382,7 @@ func (px *Paxos) propose(seq int) {
 
 				if rpcOk && reply.OK {
 					log.Printf(
-						"Paxos -- Prepare OK on %d: instance: %d, from: %d",
+						"Paxos -- Prepare OK on %d: seq: %d, from: %d",
 						px.me, seq, i)
 					prepareReplies[i] = &reply
 
@@ -458,7 +458,7 @@ func (px *Paxos) propose(seq int) {
 
 				if rpcOk && reply.OK {
 					log.Printf(
-						"Paxos -- Accept OK on %d: instance: %d, from: %d",
+						"Paxos -- Accept OK on %d: seq: %d, from: %d",
 						px.me, seq, i)
 					atomic.AddInt32(oks, 1)
 					if *oks >= maj {
