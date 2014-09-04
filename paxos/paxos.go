@@ -753,8 +753,15 @@ type DecideReply struct {
 }
 
 func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
-	instance, _ := px.getInstance(args.Seq)
+	seq := args.Seq
+	instance, exists := px.getInstance(args.Seq)
+	if !exists {
+		instance = NewInstanceState(seq, nil)
+		px.putInstance(seq, instance)
+	}
+
 	if instance.vAccept != args.ValueDecided {
+		// this may not be critical
 		log.Printf(
 			"Paxos -- Decided handle FAIL on %d, value not consistent: %s, %s\n",
 			px.me,
