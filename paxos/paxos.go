@@ -82,6 +82,14 @@ type Paxos struct {
 
 	max     int
 	maxLock sync.Mutex
+
+	localMin      int // local application call Done
+	localMinLock  sync.Mutex
+	globalMin     int // global min seq, lower seqs are GCed
+	globalMinLock sync.Mutex
+	minChan       chan N
+
+	minHeap *IntHeap // a min heap for tracking seq numbers
 }
 
 // Structure that holds information of a single agreement instance
@@ -174,18 +182,27 @@ func (n *N) isBiggerThan(other *N) bool {
 func (px *Paxos) Start(seq int, v interface{}) {
 	// TODO need check
 	//   - what to do when multiple peers start a instance in same time?
+	if seq < px.Min() {
+		return
+	}
+
 	instance, exists := px.getInstance(seq)
 	if !exists {
 		instance = NewInstanceState(seq, v)
 		px.putInstance(seq, instance)
 	}
 
-	// update seen max seq
-	px.updateaMax(seq)
-
-	if !instance.decided {
-		go px.propose(seq)
+	if instance.decided {
+		return
 	}
+
+	// update seen max seq
+	px.updateMax(seq)
+
+	// update seen min value
+	px.pushMin(seq)
+
+	go px.propose(seq)
 }
 
 //
@@ -195,7 +212,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-	// Your code here.
+	px.updateLocalMin(seq)
 }
 
 //
@@ -238,8 +255,7 @@ func (px *Paxos) Max() int {
 // instances.
 //
 func (px *Paxos) Min() int {
-	// You code here.
-	return 0
+	return px.globalMin + 1
 }
 
 //
@@ -252,6 +268,9 @@ func (px *Paxos) Min() int {
 func (px *Paxos) Status(seq int) (bool, interface{}) {
 	instance, exists := px.getInstance(seq)
 	if !exists || !instance.decided {
+		return false, nil
+	}
+	if seq < px.Min() {
 		return false, nil
 	}
 	return true, instance.vAccept
@@ -279,6 +298,13 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.peers = peers
 	px.me = me
 	px.instances = make(map[int]*InstanceState)
+	px.localMin = -1
+	px.globalMin = -1
+
+	// init the min heap
+	px.minHeap = MakeIntHeap()
+
+	px.minChan = make(chan N, len(px.peers))
 
 	if rpcs != nil {
 		// caller will create socket &c
@@ -330,6 +356,9 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 				}
 			}
 		}()
+
+		// launch background GC thread
+		go px.gc(px.minChan)
 	}
 
 	return px
@@ -460,6 +489,10 @@ func (px *Paxos) propose(seq int) {
 					log.Printf(
 						"Paxos -- Accept OK on %d: seq: %d, from: %d",
 						px.me, seq, i)
+
+					// send received min value to GC thread
+					px.minChan <- N{i, reply.Min}
+
 					atomic.AddInt32(oks, 1)
 					if *oks >= maj {
 						chanOk <- signal
@@ -496,12 +529,6 @@ func (px *Paxos) propose(seq int) {
 	}
 }
 
-// acceptor logic
-
-func (px *Paxos) accept() {
-
-}
-
 // utils
 func (px *Paxos) getInstance(seq int) (*InstanceState, bool) {
 	px.instanceLock.RLock()
@@ -524,11 +551,97 @@ func (px *Paxos) getMajority() int {
 	return len(px.peers)/2 + 1
 }
 
-func (px *Paxos) updateaMax(currentSeq int) {
+func (px *Paxos) updateMax(currentSeq int) {
 	px.maxLock.Lock()
 	defer px.maxLock.Unlock()
 	if currentSeq > px.max {
 		px.max = currentSeq
+	}
+}
+
+func (px *Paxos) updateGlobalMin(min int) {
+	px.globalMinLock.Lock()
+	defer px.globalMinLock.Unlock()
+	px.globalMin = min
+}
+
+func (px *Paxos) updateLocalMin(min int) {
+	px.localMinLock.Lock()
+	defer px.localMinLock.Unlock()
+	px.localMin = min
+}
+
+func (px *Paxos) pushMin(seq int) {
+	px.localMinLock.Lock()
+	defer px.localMinLock.Unlock()
+	px.minHeap.Push(seq)
+}
+
+func (px *Paxos) popMin() int {
+	px.localMinLock.Lock()
+	defer px.localMinLock.Unlock()
+	return px.minHeap.Pop().(int)
+}
+
+func (px *Paxos) peekMin() int {
+	px.localMinLock.Lock()
+	defer px.localMinLock.Unlock()
+	return px.minHeap.Peek().(int)
+}
+
+// GC function for paxos service
+// to be launched in a dedicated thread
+func (px *Paxos) gc(minChan chan N) {
+	received := make(map[int]int)
+	for px.dead == false {
+		// take min values send by peers
+		// if received min values from all peers
+		// take the mininum as the global min value
+		// then delete all instance whose seq < global min
+		for min := range minChan {
+			peer := min.Peer
+			minSeq := min.Num
+
+			// update received min values
+			// ignore default value -1
+			if minSeq >= 0 {
+				received[peer] = minSeq
+			}
+
+			if len(received) == len(px.peers) {
+				// all received
+				// find global min
+				globalMin := received[0]
+				for _, v := range received {
+					if v < globalMin {
+						globalMin = v
+					}
+				}
+				px.updateGlobalMin(globalMin)
+
+				// do GC
+				counter := 0
+				px.instanceLock.Lock()
+				for px.minHeap.Len() > 0 && px.peekMin() <= px.globalMin {
+					seq := px.popMin()
+					instance, _ := px.getInstance(seq)
+					if instance.decided == false {
+						log.Fatal("Paxos -- Delete undecided instance %d", instance.seq)
+					}
+					delete(px.instances, seq)
+					counter += 1
+				}
+				px.instanceLock.Unlock()
+				log.Printf(
+					"Paxos -- GCed %d instances, global min %d\n",
+					counter,
+					px.globalMin,
+				)
+
+				// reset received map
+				received = make(map[int]int)
+			}
+		}
 	}
 }
 
@@ -554,7 +667,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	n := args.Num
 
 	// update local max seen seq
-	px.updateaMax(seq)
+	px.updateMax(seq)
 
 	instance, exists := px.instances[seq]
 	if !exists {
@@ -594,7 +707,8 @@ type AcceptArgs struct {
 type AcceptReply struct {
 	// accept_ok
 	// accept_reject
-	OK bool
+	OK  bool
+	Min int // piggy-backed min seq
 }
 
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
@@ -603,7 +717,7 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	value := args.Value
 
 	// update local max seen seq
-	px.updateaMax(seq)
+	px.updateMax(seq)
 
 	instance, exists := px.getInstance(seq)
 	if !exists {
@@ -613,6 +727,8 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 
 	if n.isBiggerThan(instance.nSeen) || n == *instance.nSeen {
 		reply.OK = true
+		// piggy-back min seq value
+		reply.Min = px.localMin
 		instance.alterValues(&n, &n, &value)
 		log.Printf(
 			"Paxos -- Accept handle OK, seq: %d, peer: %d, n: %s, v: %s\n",
