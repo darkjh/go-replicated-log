@@ -36,3 +36,9 @@ func (h *IntHeap) Pop() interface{} {
 func (h *IntHeap) Peek() interface{} {
 	return (*h)[0]
 }
+
+func MakeIntHeap() *IntHeap {
+	h := &IntHeap{}
+	heap.Init(h)
+	return h
+}
