@@ -526,6 +526,8 @@ func (px *Paxos) propose(seq int) {
 				}
 			}(i, peer)
 		}
+
+		return
 	}
 }
 
