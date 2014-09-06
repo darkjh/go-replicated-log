@@ -7,6 +7,7 @@ import "os"
 import "time"
 import "fmt"
 import "math/rand"
+import "container/heap"
 
 func port(tag string, host int) string {
 	s := "/var/tmp/824-"
@@ -138,6 +139,35 @@ func TestN(t *testing.T) {
 	result = *NewN(2, 1) == *NewN(1, 1)
 	if result {
 		t.Fail()
+	}
+}
+
+func TestMinHeap(t *testing.T) {
+	h := MakeIntHeap()
+	l := h.Len()
+	if l != 0 {
+		t.Error("Initial length should be 0")
+	}
+
+	for i := 4; i >= 0; i-- {
+		heap.Push(h, i)
+	}
+
+	l = h.Len()
+	if l != 5 {
+		t.Error("Length after push should be 5")
+	}
+
+	min := (*h)[0]
+	if min != 0 {
+		t.Error("Peek error", min)
+	}
+
+	for i := 0; i < 5; i++ {
+		v := heap.Pop(h).(int)
+		if v != i {
+			t.Error("Pop order error")
+		}
 	}
 }
 
