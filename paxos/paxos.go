@@ -62,6 +62,7 @@ import "sync"
 import "fmt"
 import "math/rand"
 import "sync/atomic"
+import "container/heap"
 
 // import "time"
 
@@ -199,9 +200,6 @@ func (px *Paxos) Start(seq int, v interface{}) {
 
 	// update seen max seq
 	px.updateMax(seq)
-
-	// update seen min value
-	px.pushMin(seq)
 
 	go px.propose(seq)
 }
@@ -547,6 +545,7 @@ func (px *Paxos) putInstance(seq int, instance *InstanceState) {
 	px.instanceLock.Lock()
 	defer px.instanceLock.Unlock()
 	px.instances[seq] = instance
+	px.pushMin(seq)
 }
 
 func (px *Paxos) hasMajority(n int) bool {
