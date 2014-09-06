@@ -89,7 +89,8 @@ type Paxos struct {
 	globalMinLock sync.Mutex
 	minChan       chan N
 
-	minHeap *IntHeap // a min heap for tracking seq numbers
+	minHeap     *IntHeap // a min heap for tracking seq numbers
+	minHeapLock sync.RWMutex
 }
 
 // Structure that holds information of a single agreement instance
@@ -577,20 +578,20 @@ func (px *Paxos) updateLocalMin(min int) {
 }
 
 func (px *Paxos) pushMin(seq int) {
-	px.localMinLock.Lock()
-	defer px.localMinLock.Unlock()
-	px.minHeap.Push(seq)
+	px.minHeapLock.Lock()
+	defer px.minHeapLock.Unlock()
+	heap.Push(px.minHeap, seq)
 }
 
 func (px *Paxos) popMin() int {
-	px.localMinLock.Lock()
-	defer px.localMinLock.Unlock()
-	return px.minHeap.Pop().(int)
+	px.minHeapLock.Lock()
+	defer px.minHeapLock.Unlock()
+	return heap.Pop(px.minHeap).(int)
 }
 
 func (px *Paxos) peekMin() int {
-	px.localMinLock.Lock()
-	defer px.localMinLock.Unlock()
+	px.minHeapLock.RLock()
+	defer px.minHeapLock.RUnlock()
 	return px.minHeap.Peek().(int)
 }
 
@@ -622,6 +623,7 @@ func (px *Paxos) gc(minChan chan N) {
 						globalMin = v
 					}
 				}
+				// TODO may not need a mutex for it
 				px.updateGlobalMin(globalMin)
 
 				// do GC
