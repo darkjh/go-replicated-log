@@ -411,8 +411,8 @@ func (px *Paxos) propose(seq int) {
 
 				if rpcOk && reply.OK {
 					log.Printf(
-						"Paxos -- Prepare OK on %d: seq: %d, from: %d",
-						px.me, seq, i)
+						logHeader(seq, px.me)+"Prepare OK from %d\n", i,
+					)
 					prepareReplies[i] = &reply
 
 					atomic.AddInt32(oks, 1)
@@ -487,8 +487,8 @@ func (px *Paxos) propose(seq int) {
 
 				if rpcOk && reply.OK {
 					log.Printf(
-						"Paxos -- Accept OK on %d: seq: %d, from: %d",
-						px.me, seq, i)
+						logHeader(seq, px.me)+"Accept OK from %d\n", i,
+					)
 
 					// send received min value to GC thread
 					px.minChan <- N{i, reply.Min}
@@ -527,6 +527,9 @@ func (px *Paxos) propose(seq int) {
 			}(i, peer)
 		}
 
+		log.Printf(
+			logHeader(seq, px.me) + "Instance finished ...\n",
+		)
 		return
 	}
 }
@@ -626,16 +629,13 @@ func (px *Paxos) gc(minChan chan N) {
 				px.instanceLock.Lock()
 				for px.minHeap.Len() > 0 && px.peekMin() <= px.globalMin {
 					seq := px.popMin()
-					instance, _ := px.getInstance(seq)
-					if instance.decided == false {
-						log.Fatal("Paxos -- Delete undecided instance %d", instance.seq)
-					}
 					delete(px.instances, seq)
 					counter += 1
 				}
 				px.instanceLock.Unlock()
+
 				log.Printf(
-					"Paxos -- GCed %d instances, global min %d\n",
+					logHeader(-1, px.me)+"GCed %d instances, global min at %d\n",
 					counter,
 					px.globalMin,
 				)
@@ -684,8 +684,9 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		reply.NumAccept = *instance.nAccept
 		reply.ValueAccept = instance.vAccept
 		log.Printf(
-			"Paxos -- Prepare handle OK, seq: %d, peer: %d, n: %#v\n",
-			seq, px.me, structString(n))
+			logHeader(seq, px.me)+"Prepare handle OK, n: %#v\n",
+			structString(n),
+		)
 	} else {
 		// prepare_reject
 		reply.OK = false
@@ -693,8 +694,10 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		reply.NumAccept = *instance.nAccept
 		reply.ValueAccept = instance.vAccept
 		log.Printf(
-			"Paxos -- Prepare handle FAILED, seq: %d, peer: %d, np: %#v, n: %#v\n",
-			seq, px.me, structString(instance.nSeen), structString(n))
+			logHeader(seq, px.me)+"Prepare handle FAILED, np: %#v, n: %#v\n",
+			structString(instance.nSeen),
+			structString(n),
+		)
 	}
 
 	return nil
@@ -733,12 +736,16 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 		reply.Min = px.localMin
 		instance.alterValues(&n, &n, &value)
 		log.Printf(
-			"Paxos -- Accept handle OK, seq: %d, peer: %d, n: %s, v: %s\n",
-			seq, px.me, structString(n), structString(value))
+			logHeader(seq, px.me)+"Accept handle OK, n: %#v, v: %#v\n",
+			structString(n),
+			structString(value),
+		)
 	} else {
 		log.Printf(
-			"Paxos -- Accept handle FAIL, seq: %d, peer: %d, np: %s, n: %s\n",
-			seq, px.me, structString(instance.nSeen), structString(n))
+			logHeader(seq, px.me)+"Accept handle FAIL, np: %#v, n: %#v\n",
+			structString(instance.nSeen),
+			structString(n),
+		)
 		reply.OK = false
 	}
 
@@ -765,15 +772,18 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	if instance.vAccept != args.ValueDecided {
 		// this may not be critical
 		log.Printf(
-			"Paxos -- Decided handle FAIL on %d, value not consistent: %s, %s\n",
-			px.me,
+			logHeader(seq, px.me)+"Decided handle FAIL, value not consistent: %#v, %#v\n",
 			structString(instance.vAccept),
-			structString(args.ValueDecided))
+			structString(args.ValueDecided),
+		)
 	}
 	instance.decided = true
 	instance.vAccept = args.ValueDecided
-	log.Printf("Paxos -- Decided handle OK on %d, value: %v",
-		px.me, args.ValueDecided)
+	log.Printf(
+		logHeader(seq, px.me)+"Decided handle OK, value: %#v\n",
+		structString(args.ValueDecided),
+	)
+
 	return nil
 }
 
@@ -819,4 +829,12 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 
 func structString(s interface{}) string {
 	return fmt.Sprintf("%#v", s)
+}
+
+func logHeader(seq int, peer int) string {
+	return fmt.Sprintf(
+		"Paxos -- s %2d p %2d -- ",
+		seq,
+		peer,
+	)
 }
