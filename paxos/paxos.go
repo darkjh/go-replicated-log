@@ -610,7 +610,14 @@ func (px *Paxos) gc(minChan chan N) {
 			// update received min values
 			// ignore default value -1
 			if minSeq >= 0 {
-				received[peer] = minSeq
+				receivedMin, exists := received[peer]
+				if exists == true {
+					if minSeq > receivedMin {
+						received[peer] = receivedMin
+					}
+				} else {
+					received[peer] = minSeq
+				}
 			}
 
 			if len(received) == len(px.peers) {
