@@ -373,10 +373,14 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 // Should run in its own thread
 func (px *Paxos) propose(seq int) {
 	instance, _ := px.getInstance(seq)
+	nextN := -1
 	for !instance.decided && !px.dead {
 		// prepare n
-		// TODO it's better to use acceptors value
-		instance.alterN(px.me, instance.n.Num+1)
+		if instance.n.Num > nextN {
+			instance.alterN(px.me, instance.n.Num+1)
+		} else {
+			instance.alterN(px.me, nextN+1)
+		}
 
 		// for each peer
 		// do Preprare
@@ -392,6 +396,7 @@ func (px *Paxos) propose(seq int) {
 		fails := new(int32) // 0
 
 		prepareReplies := make([]*PrepareReply, len(px.peers))
+		failedReplies := make([]*PrepareReply, len(px.peers))
 		for i, peer := range px.peers {
 			go func(i int, p string,
 				chanOk chan struct{}, chanFail chan struct{}) {
@@ -419,6 +424,7 @@ func (px *Paxos) propose(seq int) {
 						chanOk <- signal
 					}
 				} else {
+					failedReplies[i] = &reply
 					atomic.AddInt32(fails, 1)
 					if *fails >= maj {
 						chanFail <- signal
@@ -431,6 +437,15 @@ func (px *Paxos) propose(seq int) {
 		case <-chanOk:
 			break
 		case <-chanFail:
+			// find a re-proposal N value from piggy backed seen values
+			for _, reply := range failedReplies {
+				if reply == nil {
+					continue
+				}
+				if reply.NumSeen.Num > nextN {
+					nextN = reply.NumSeen.Num
+				}
+			}
 			// re-propose
 			continue
 		}
@@ -443,6 +458,7 @@ func (px *Paxos) propose(seq int) {
 			if reply == nil {
 				continue
 			}
+			// find biggest N accepted
 			num := reply.NumAccept
 			if num.Num < 0 {
 				continue
@@ -669,6 +685,7 @@ type PrepareReply struct {
 	// prepare_reject
 	OK          bool
 	NumAccept   N
+	NumSeen     N
 	ValueAccept interface{}
 }
 
@@ -690,6 +707,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		reply.OK = true
 		instance.alterValues(&n, nil, nil)
 		reply.NumAccept = *instance.nAccept
+		reply.NumSeen = *instance.nSeen
 		reply.ValueAccept = instance.vAccept
 		log.Printf(
 			logHeader(seq, px.me)+"Prepare handle OK, n: %#v\n",
@@ -700,6 +718,7 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 		reply.OK = false
 		// piggy back the current value
 		reply.NumAccept = *instance.nAccept
+		reply.NumSeen = *instance.nSeen
 		reply.ValueAccept = instance.vAccept
 		log.Printf(
 			logHeader(seq, px.me)+"Prepare handle FAILED, np: %#v, n: %#v\n",
