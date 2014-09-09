@@ -390,18 +390,17 @@ func (px *Paxos) propose(seq int) {
 		maj := int32(px.getMajority())
 		var signal struct{}
 
-		chanOk := make(chan struct{})
-		chanFail := make(chan struct{})
+		chanPrepareOk := make(chan struct{})
+		chanPrepareFail := make(chan struct{})
 
-		oks := new(int32)   // 0
-		fails := new(int32) // 0
+		prepareOks := int32(0)
+		prepareFails := int32(0)
 
 		prepareReplies := make([]*PrepareReply, len(px.peers))
 		failedReplies := make([]*PrepareReply, len(px.peers))
 		for i, peer := range px.peers {
 			go func(i int, p string,
 				chanOk chan struct{}, chanFail chan struct{}) {
-
 				// `Prepare` call
 				var reply PrepareReply
 				var rpcOk bool
@@ -420,24 +419,24 @@ func (px *Paxos) propose(seq int) {
 					)
 					prepareReplies[i] = &reply
 
-					atomic.AddInt32(oks, 1)
-					if *oks >= maj {
+					atomic.AddInt32(&prepareOks, 1)
+					if prepareOks >= maj {
 						chanOk <- signal
 					}
 				} else {
 					failedReplies[i] = &reply
-					atomic.AddInt32(fails, 1)
-					if *fails >= maj {
+					atomic.AddInt32(&prepareFails, 1)
+					if prepareFails >= maj {
 						chanFail <- signal
 					}
 				}
-			}(i, peer, chanOk, chanFail)
+			}(i, peer, chanPrepareOk, chanPrepareFail)
 		}
 
 		select {
-		case <-chanOk:
+		case <-chanPrepareOk:
 			break
-		case <-chanFail:
+		case <-chanPrepareFail:
 			// find a re-proposal N value from piggy backed seen values
 			for _, reply := range failedReplies {
 				if reply == nil {
@@ -481,11 +480,11 @@ func (px *Paxos) propose(seq int) {
 
 		// for each peer
 		// do Accept
-		chanOk = make(chan struct{})
-		chanFail = make(chan struct{})
+		chanAcceptOk := make(chan struct{})
+		chanAcceptFail := make(chan struct{})
 
-		oks = new(int32)   // 0
-		fails = new(int32) // 0
+		acceptOks := int32(0)
+		acceptFails := int32(0)
 
 		for i, peer := range px.peers {
 			go func(i int, p string,
@@ -509,23 +508,23 @@ func (px *Paxos) propose(seq int) {
 					// send received min value to GC thread
 					px.minChan <- N{i, reply.Min}
 
-					atomic.AddInt32(oks, 1)
-					if *oks >= maj {
+					atomic.AddInt32(&acceptOks, 1)
+					if acceptOks >= maj {
 						chanOk <- signal
 					}
 				} else {
-					atomic.AddInt32(fails, 1)
-					if *fails >= maj {
+					atomic.AddInt32(&acceptFails, 1)
+					if acceptFails >= maj {
 						chanFail <- signal
 					}
 				}
-			}(i, peer, chanOk, chanFail)
+			}(i, peer, chanAcceptOk, chanAcceptFail)
 		}
 
 		select {
-		case <-chanOk:
+		case <-chanAcceptOk:
 			break
-		case <-chanFail:
+		case <-chanAcceptFail:
 			// re-propose
 			continue
 		}
@@ -546,6 +545,7 @@ func (px *Paxos) propose(seq int) {
 		log.Printf(
 			logHeader(seq, px.me) + "Instance finished ...\n",
 		)
+
 		return
 	}
 }
