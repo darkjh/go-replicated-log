@@ -111,8 +111,9 @@ type InstanceState struct {
 	// largest n seen by the acceptor
 	nSeen *N
 	// largest n and its value accepted
-	nAccept *N
-	vAccept interface{}
+	nAccept  *N
+	vAccept  interface{}
+	vDecided interface{}
 
 	// utils
 	mu sync.Mutex
@@ -272,7 +273,7 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
 	if seq < px.Min() {
 		return false, nil
 	}
-	return true, instance.vAccept
+	return true, instance.vDecided
 }
 
 //
@@ -761,7 +762,11 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 		reply.OK = true
 		// piggy-back min seq value
 		reply.Min = px.localMin
-		instance.alterValues(&n, &n, &value)
+		if instance.decided == false {
+			// only modifies instance value if not decided
+			// it happens some late accept message erase the decided value
+			instance.alterValues(&n, &n, &value)
+		}
 		log.Printf(
 			logHeader(seq, px.me)+"Accept handle OK, n: %#v, v: %#v\n",
 			structString(n),
@@ -804,11 +809,13 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 			structString(args.ValueDecided),
 		)
 	}
+	instance.mu.Lock()
 	instance.decided = true
-	instance.vAccept = args.ValueDecided
+	instance.vDecided = args.ValueDecided
+	instance.mu.Unlock()
 	log.Printf(
 		logHeader(seq, px.me)+"Decided handle OK, value: %#v\n",
-		structString(args.ValueDecided),
+		structString(instance.vDecided),
 	)
 
 	return nil
