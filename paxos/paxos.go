@@ -392,6 +392,8 @@ func (px *Paxos) propose(seq int) {
 
 		chanPrepareOk := make(chan struct{})
 		chanPrepareFail := make(chan struct{})
+		defer close(chanPrepareOk)
+		defer close(chanPrepareFail)
 
 		prepareOks := int32(0)
 		prepareFails := int32(0)
@@ -401,6 +403,10 @@ func (px *Paxos) propose(seq int) {
 		for i, peer := range px.peers {
 			go func(i int, p string,
 				chanOk chan struct{}, chanFail chan struct{}) {
+				defer func() {
+					recover()
+				}()
+
 				// `Prepare` call
 				var reply PrepareReply
 				var rpcOk bool
@@ -482,6 +488,8 @@ func (px *Paxos) propose(seq int) {
 		// do Accept
 		chanAcceptOk := make(chan struct{})
 		chanAcceptFail := make(chan struct{})
+		defer close(chanAcceptOk)
+		defer close(chanAcceptFail)
 
 		acceptOks := int32(0)
 		acceptFails := int32(0)
@@ -489,6 +497,10 @@ func (px *Paxos) propose(seq int) {
 		for i, peer := range px.peers {
 			go func(i int, p string,
 				chanOk chan struct{}, chanFail chan struct{}) {
+				defer func() {
+					recover()
+				}()
+
 				var reply AcceptReply
 				var rpcOk bool
 				args := AcceptArgs{seq, num, value}
