@@ -377,11 +377,13 @@ func (px *Paxos) propose(seq int) {
 	nextN := -1
 	for !instance.decided && !px.dead {
 		// prepare n
-		if instance.n.Num > nextN {
-			instance.alterN(px.me, instance.n.Num+1)
-		} else {
-			instance.alterN(px.me, nextN+1)
+		if instance.nSeen.Num > nextN {
+			nextN = instance.nSeen.Num
 		}
+		if instance.n.Num > nextN {
+			nextN = instance.n.Num
+		}
+		instance.alterN(px.me, nextN+1)
 
 		// for each peer
 		// do Preprare
