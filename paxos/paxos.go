@@ -319,26 +319,26 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 		}
 		px.l = l
 
-		// please do not change any of the following code,
-		// or do anything to subvert it.
-
 		// create a thread to accept RPC connections
 		go func() {
 			for px.dead == false {
 				conn, err := px.l.Accept()
 				if err == nil && px.dead == false {
 					if px.unreliable && (rand.Int63()%1000) < 100 {
-						// discard the request.
-
+						// simply ignores the request
 						conn.Close()
 					} else if px.unreliable && (rand.Int63()%1000) < 200 {
 						// process the request but force discard of reply.
-						c1 := conn.(*net.UnixConn)
-						f, _ := c1.File()
-						err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
+						// close the write of the connection
+						c1 := conn.(*net.TCPConn)
+						err := c1.CloseWrite()
+						// equivalent to below syscall:
+						//   f, _ := c1.File()
+						//   err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 						if err != nil {
 							fmt.Printf("shutdown: %v\n", err)
 						}
+						// serve the rpc
 						px.rpcCount++
 						go rpcs.ServeConn(conn)
 					} else {
