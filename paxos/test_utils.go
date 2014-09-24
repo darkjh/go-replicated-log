@@ -6,11 +6,12 @@ import "strconv"
 import "testing"
 import "time"
 
-// port takes the peer number and returns string of "host:string"
+// port takes the peer number and returns string of "host:port"
 func port(host int) string {
-	h := "localhost:"
-	p := 8880 + host
-	h += strconv.Itoa(p)
+	h := "127.0.0."
+	p := ":8888"
+	h += strconv.Itoa(host + 1)
+	h += p
 	return h
 }
 
