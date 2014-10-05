@@ -5,14 +5,25 @@ package paxos
 import "strconv"
 import "testing"
 import "time"
+import "os/exec"
+import "bytes"
+import "log"
+import "strings"
+
+const log_drop = "log-and-drop"
 
 // port takes the peer number and returns string of "host:port"
-func port(host int) string {
+func port(peer int) string {
 	h := "127.0.0."
 	p := ":8888"
-	h += strconv.Itoa(host + 1)
+	h += strconv.Itoa(peer + 10)
 	h += p
 	return h
+}
+
+// ip returns the ip adress from a host string
+func ip(host string) string {
+	return strings.Split(host, ":")[0]
 }
 
 // ndecided checks a certain paxos instance's decision and returns the number
@@ -78,6 +89,75 @@ func cleanup(pxa []*Paxos) {
 	for i := 0; i < len(pxa); i++ {
 		if pxa[i] != nil {
 			pxa[i].Kill()
+		}
+	}
+}
+
+// runCmd runs a cmd with given arguments
+func runCmd(name string, args ...string) string {
+	cmd := exec.Command(name, args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return out.String()
+}
+
+// heal flushes and deletes all previous set iptable rules
+func heal() {
+	runCmd("iptables", "-F")
+	runCmd("iptables", "-X")
+}
+
+// cutLink cuts all packets transmission between the link
+func cutLink(from string, to string, port string) {
+	runCmd(
+		"iptables", "-A", "INPUT", // append new rule
+		"-s", from, "-d", to,
+		"-j", "DROP",
+	)
+	runCmd(
+		"iptables", "-A", "INPUT", // append new rule
+		"-s", to, "-d", from,
+		"-j", "DROP",
+	)
+}
+
+func logThenDrop() {
+	// iptables -N log-and-drop # create new chain
+	// iptables -A log-and-drop -j LOG --log-prefix 'SWAMP-THING'--log-level 4
+	// iptables -A log-and-drop -J DROP
+	runCmd("iptables", "-N", log_drop) // create new chain
+	runCmd(
+		"iptables", "-A", log_drop,
+		"-j", "LOG",
+		"--log-prefix", "[Partition]",
+		"--log-level", "4",
+	)
+	runCmd(
+		"iptables", "-A", log_drop,
+		"-j", "DROP",
+	)
+}
+
+func partition(t *testing.T, p1 []int, p2 []int, p3 []int) {
+	// clean al previous network partition
+	heal()
+
+	// partition as demanded
+	pa := [][]int{p1, p2, p3}
+	for pi := 0; pi < len(pa); pi++ {
+		p := pa[pi]
+		for pj := pi + 1; pj < len(pa); pj++ {
+			q := pa[pj]
+			// cut link
+			for i := 0; i < len(p); i++ {
+				for j := 0; j < len(q); j++ {
+					cutLink(ip(port(p[i])), ip(port(q[j])), "8888")
+				}
+			}
 		}
 	}
 }
