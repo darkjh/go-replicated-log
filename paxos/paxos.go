@@ -415,7 +415,7 @@ func (px *Paxos) propose(seq int) {
 					res := px.Prepare(&args, &reply)
 					rpcOk = res == nil
 				} else {
-					rpcOk = call(p, "Paxos.Prepare", &args, &reply)
+					rpcOk = call(p, "Paxos.Prepare", &px.peers[px.me], &args, &reply)
 				}
 
 				if rpcOk && reply.OK {
@@ -508,7 +508,7 @@ func (px *Paxos) propose(seq int) {
 					res := px.Accept(&args, &reply)
 					rpcOk = res == nil
 				} else {
-					rpcOk = call(p, "Paxos.Accept", &args, &reply)
+					rpcOk = call(p, "Paxos.Accept", &px.peers[px.me], &args, &reply)
 				}
 
 				if rpcOk && reply.OK {
@@ -548,7 +548,7 @@ func (px *Paxos) propose(seq int) {
 				if px.me == i {
 					px.Decide(&args, &reply)
 				} else {
-					call(p, "Paxos.Decide", &args, &reply)
+					call(p, "Paxos.Decide", &px.peers[px.me], &args, &reply)
 				}
 			}(i, peer)
 		}
@@ -832,8 +832,7 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	return nil
 }
 
-//
-// call() sends an RPC to the rpcname handler on server srv
+// call sends an RPC to the rpcname handler on server srv
 // with arguments args, waits for the reply, and leaves the
 // reply in reply. the reply argument should be a pointer
 // to a reply structure.
@@ -841,25 +840,28 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 // the return value is true if the server responded, and false
 // if call() was not able to contact the server. in particular,
 // the replys contents are only valid if call() returned true.
-//
-// you should assume that call() will time out and return an
-// error after a while if it does not get a reply from the server.
-//
-// please use call() to send all RPCs, in client.go and server.go.
-// please do not change this function.
-//
-func call(srv string, name string, args interface{}, reply interface{}) bool {
-	c, err := rpc.Dial("tcp", srv)
+func call(srv string, name string, clientAddr *string,
+	args interface{}, reply interface{}) bool {
+	var d net.Dialer
+	if clientAddr != nil {
+		// need to specify the port at 0
+		// let the kernel choose a random port
+		addr, _ := net.ResolveTCPAddr("tcp", ip(*clientAddr)+":0")
+		d.LocalAddr = addr
+	}
+
+	conn, err := d.Dial("tcp", srv)
 	if err != nil {
 		err1 := err.(*net.OpError)
 		if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
-			fmt.Printf("paxos Dial() failed: %v\n", err1)
+			fmt.Printf("paxos Dial(%s) failed: %v\n", srv, err1)
 		}
 		return false
 	}
-	defer c.Close()
+	client := rpc.NewClient(conn)
+	defer client.Close()
 
-	err = c.Call(name, args, reply)
+	err = client.Call(name, args, reply)
 	if err == nil {
 		return true
 	}
