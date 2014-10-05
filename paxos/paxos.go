@@ -62,8 +62,11 @@ import "fmt"
 import "math/rand"
 import "sync/atomic"
 import "container/heap"
+import "time"
 
-// import "time"
+const (
+	timeOut = time.Second
+)
 
 type Paxos struct {
 	mu         sync.Mutex
@@ -850,24 +853,54 @@ func call(srv string, name string, clientAddr *string,
 		d.LocalAddr = addr
 	}
 
-	conn, err := d.Dial("tcp", srv)
-	if err != nil {
-		err1 := err.(*net.OpError)
-		if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
-			fmt.Printf("paxos Dial(%s) failed: %v\n", srv, err1)
+	var client *rpc.Client
+
+	tcpErrChan := make(chan error)
+	connChan := make(chan net.Conn)
+
+	// tcp dial
+
+	go func() {
+		conn, err := d.Dial("tcp", srv)
+		tcpErrChan <- err
+		connChan <- conn
+	}()
+
+	select {
+	case <-time.After(timeOut):
+		return false
+
+	case err := <-tcpErrChan:
+		if err != nil {
+			err1 := err.(*net.OpError)
+			if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
+				fmt.Printf("paxos Dial(%s) failed: %v\n", srv, err1)
+			}
+			return false
 		}
+		conn := <-connChan
+		client = rpc.NewClient(conn)
+		defer client.Close()
+	}
+
+	// rpc call
+
+	rpcErrChan := make(chan error)
+	go func() {
+		rpcErrChan <- client.Call(name, args, reply)
+	}()
+
+	select {
+	case <-time.After(timeOut):
+		return false
+
+	case err := <-rpcErrChan:
+		if err == nil {
+			return true
+		}
+		fmt.Println(err)
 		return false
 	}
-	client := rpc.NewClient(conn)
-	defer client.Close()
-
-	err = client.Call(name, args, reply)
-	if err == nil {
-		return true
-	}
-
-	fmt.Println(err)
-	return false
 }
 
 //----------------
