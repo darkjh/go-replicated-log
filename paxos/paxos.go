@@ -851,37 +851,23 @@ func call(srv string, name string, clientAddr *string,
 		// let the kernel choose a random port
 		addr, _ := net.ResolveTCPAddr("tcp", ip(*clientAddr)+":0")
 		d.LocalAddr = addr
+		// also set the timeout
+		d.Timeout = timeOut
 	}
-
-	var client *rpc.Client
-
-	tcpErrChan := make(chan error)
-	connChan := make(chan net.Conn)
 
 	// tcp dial
 
-	go func() {
-		conn, err := d.Dial("tcp", srv)
-		tcpErrChan <- err
-		connChan <- conn
-	}()
-
-	select {
-	case <-time.After(timeOut):
-		return false
-
-	case err := <-tcpErrChan:
-		if err != nil {
-			err1 := err.(*net.OpError)
-			if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
-				fmt.Printf("paxos Dial(%s) failed: %v\n", srv, err1)
-			}
-			return false
+	conn, err := d.Dial("tcp", srv)
+	if err != nil {
+		err1 := err.(*net.OpError)
+		if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
+			fmt.Printf("paxos Dial(%s) failed: %v\n", srv, err1)
 		}
-		conn := <-connChan
-		client = rpc.NewClient(conn)
-		defer client.Close()
+		return false
 	}
+	client := rpc.NewClient(conn)
+	defer conn.Close()
+	defer client.Close()
 
 	// rpc call
 
