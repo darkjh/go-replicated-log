@@ -899,7 +899,7 @@ func structString(s interface{}) string {
 
 func logHeader(seq int, peer int) string {
 	return fmt.Sprintf(
-		"Paxos -- s %2d p %2d -- ",
+		"[Paxos] [s %2d][p %2d] ",
 		seq,
 		peer,
 	)
