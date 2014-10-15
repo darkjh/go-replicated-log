@@ -444,3 +444,29 @@ func TestOld(t *testing.T) {
 
 	fmt.Printf("  ... Passed\n")
 }
+
+func TestSpeed(t *testing.T) {
+	runtime.GOMAXPROCS(4)
+
+	const npaxos = 3
+	var pxa []*Paxos = make([]*Paxos, npaxos)
+	var pxh []string = make([]string, npaxos)
+	defer cleanup(pxa)
+
+	for i := 0; i < npaxos; i++ {
+		pxh[i] = port(i)
+	}
+	for i := 0; i < npaxos; i++ {
+		pxa[i] = Make(pxh, i, nil)
+	}
+
+	t0 := time.Now()
+
+	for i := 0; i < 200; i++ {
+		pxa[0].Start(i, "x")
+		waitn(t, pxa, i, npaxos)
+	}
+
+	d := time.Since(t0)
+	fmt.Printf("200 agreements %v seconds\n", d.Seconds())
+}
