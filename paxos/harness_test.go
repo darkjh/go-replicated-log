@@ -90,7 +90,7 @@ func TestBasic(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	fmt.Printf("Test: Single proposer ...\n")
@@ -150,7 +150,7 @@ func TestForget(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	fmt.Printf("Test: Forgetting ...\n")
@@ -237,7 +237,7 @@ func TestForgetMem(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	pxa[0].Start(0, "x")
@@ -301,7 +301,7 @@ func TestRPCCount(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	ninst1 := 5
@@ -376,7 +376,7 @@ func TestMany(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 		pxa[i].Start(0, 0)
 	}
 
@@ -425,20 +425,20 @@ func TestOld(t *testing.T) {
 		pxh[i] = port(i)
 	}
 
-	pxa[1] = Make(pxh, 1, nil)
-	pxa[2] = Make(pxh, 2, nil)
-	pxa[3] = Make(pxh, 3, nil)
+	pxa[1] = NewPaxos(pxh, 1, nil)
+	pxa[2] = NewPaxos(pxh, 2, nil)
+	pxa[3] = NewPaxos(pxh, 3, nil)
 	pxa[1].Start(1, 111)
 
 	waitmajority(t, pxa, 1)
 
-	pxa[0] = Make(pxh, 0, nil)
+	pxa[0] = NewPaxos(pxh, 0, nil)
 	pxa[0].Start(1, 222)
 
 	waitn(t, pxa, 1, 4)
 
 	if false {
-		pxa[4] = Make(pxh, 4, nil)
+		pxa[4] = NewPaxos(pxh, 4, nil)
 		waitn(t, pxa, 1, npaxos)
 	}
 
@@ -457,7 +457,7 @@ func TestSpeed(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	t0 := time.Now()

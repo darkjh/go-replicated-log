@@ -20,7 +20,7 @@ func TestManyForgetUnreliable(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 		pxa[i].unreliable = true
 	}
 
@@ -89,7 +89,7 @@ func TestManyUnreliable(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 		pxa[i].unreliable = true
 		pxa[i].Start(0, 0)
 	}

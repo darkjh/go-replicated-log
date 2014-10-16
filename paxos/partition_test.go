@@ -18,7 +18,7 @@ func TestPartition(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	defer heal()
@@ -64,7 +64,7 @@ func TestChangingPartitions(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	defer heal()
@@ -102,7 +102,7 @@ func TestChangingPartitionsUnreliable(t *testing.T) {
 		pxh[i] = port(i)
 	}
 	for i := 0; i < npaxos; i++ {
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 	}
 
 	defer heal()
@@ -150,7 +150,7 @@ func TestChaos(t *testing.T) {
 
 	for i := 0; i < npaxos; i++ {
 		pxh[i] = port(i)
-		pxa[i] = Make(pxh, i, nil)
+		pxa[i] = NewPaxos(pxh, i, nil)
 		pxa[i].unreliable = true
 	}
 	defer heal()
