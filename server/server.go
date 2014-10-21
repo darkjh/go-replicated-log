@@ -2,7 +2,7 @@ package server
 
 import "strconv"
 import "net/http"
-import "io"
+import "encoding/json"
 import "github.com/darkjh/go-replicated-log/paxos"
 
 // import "github.com/gorilla/mux"
@@ -18,6 +18,14 @@ type Server struct {
 	peers []string
 	me    int
 	addr  string
+}
+
+type MaxMsg struct {
+	Max int
+}
+
+type MinMsg struct {
+	Min int
 }
 
 func buildAddr(addr string, port int) string {
@@ -47,7 +55,10 @@ func (s *Server) Start() {
 }
 
 func (s *Server) HandleMax(w http.ResponseWriter, req *http.Request) {
-	io.WriteString(w, strconv.Itoa(s.replica.Max()))
+	max := MaxMsg{Max: s.replica.Max()}
+	js, _ := json.Marshal(max)
+	w.Header().Set("Content-type", "application/json")
+	w.Write(js)
 }
 
 func (s *Server) Stop() {
