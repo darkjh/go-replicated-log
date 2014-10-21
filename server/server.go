@@ -4,8 +4,7 @@ import "strconv"
 import "net/http"
 import "encoding/json"
 import "github.com/darkjh/go-replicated-log/paxos"
-
-// import "github.com/gorilla/mux"
+import "github.com/gorilla/mux"
 
 const (
 	paxosPort  = 8888
@@ -26,6 +25,25 @@ type MaxMsg struct {
 
 type MinMsg struct {
 	Min int
+}
+
+type StartMsg struct {
+	Seq   int
+	Value interface{}
+}
+
+type AckMsg struct {
+	Ack bool
+}
+
+type QueryMsg struct {
+	Seq int
+}
+
+type StatusResponse struct {
+	Seq    int
+	Status bool
+	Value  interface{}
 }
 
 func buildAddr(addr string, port int) string {
@@ -50,25 +68,80 @@ func (s *Server) Start() {
 	s.replica = paxos.NewPaxos(s.peers, s.me, nil)
 
 	// start server
-	http.HandleFunc("/_max", s.HandleMax)
-	http.HandleFunc("/_min", s.HandleMin)
-	http.ListenAndServe(buildAddr(s.addr, serverPort), nil)
+	r := mux.NewRouter().StrictSlash(true)
+
+	// _max
+	max := r.Path("/_max").Subrouter()
+	max.Methods("GET").HandlerFunc(s.HandleMax)
+
+	// _min
+	min := r.Path("/_min").Subrouter()
+	min.Methods("GET").HandlerFunc(s.HandleMin)
+
+	// _start
+	start := r.Path("/_start").Subrouter()
+	start.Methods("POST").HandlerFunc(s.HandleStart)
+
+	// _status
+	status := r.Path("/_status").Subrouter()
+	status.Methods("POST").HandlerFunc(s.HandleStatus)
+
+	http.ListenAndServe(buildAddr(s.addr, serverPort), r)
 }
 
 func (s *Server) HandleMax(w http.ResponseWriter, req *http.Request) {
 	max := MaxMsg{Max: s.replica.Max()}
 	js, _ := json.Marshal(max)
-	w.Header().Set("Content-type", "application/json")
-	w.Write(js)
+	writeJson(w, js)
 }
 
 func (s *Server) HandleMin(w http.ResponseWriter, req *http.Request) {
 	min := MinMsg{Min: s.replica.Min()}
 	js, _ := json.Marshal(min)
-	w.Header().Set("Content-type", "application/json")
-	w.Write(js)
+	writeJson(w, js)
+}
+
+func (s *Server) HandleStart(w http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	var msg StartMsg
+	err := decoder.Decode(&msg)
+	if err != nil {
+		js, _ := json.Marshal(AckMsg{false})
+		writeJson(w, js)
+	}
+
+	s.replica.Start(msg.Seq, msg.Value)
+
+	js, _ := json.Marshal(AckMsg{true})
+	writeJson(w, js)
+}
+
+func (s *Server) HandleStatus(w http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	var q QueryMsg
+	err := decoder.Decode(&q)
+	if err != nil {
+		js, _ := json.Marshal(AckMsg{false})
+		writeJson(w, js)
+	}
+
+	ok, value := s.replica.Status(q.Seq)
+	var res StatusResponse
+	res.Seq = q.Seq
+	res.Status = ok
+	if ok == true {
+		res.Value = value
+	}
+
+	js, _ := json.Marshal(res)
+	writeJson(w, js)
 }
 
 func (s *Server) Stop() {
 	s.replica.Kill()
+}
+
+func writeJson(w http.ResponseWriter, js []byte) {
+	w.Header().Set("Content-type", "application/json")
+	w.Write(js)
 }
