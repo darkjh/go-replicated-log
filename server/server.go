@@ -50,13 +50,21 @@ func (s *Server) Start() {
 	s.replica = paxos.NewPaxos(s.peers, s.me, nil)
 
 	// start server
-	http.HandleFunc("/max", s.HandleMax)
+	http.HandleFunc("/_max", s.HandleMax)
+	http.HandleFunc("/_min", s.HandleMin)
 	http.ListenAndServe(buildAddr(s.addr, serverPort), nil)
 }
 
 func (s *Server) HandleMax(w http.ResponseWriter, req *http.Request) {
 	max := MaxMsg{Max: s.replica.Max()}
 	js, _ := json.Marshal(max)
+	w.Header().Set("Content-type", "application/json")
+	w.Write(js)
+}
+
+func (s *Server) HandleMin(w http.ResponseWriter, req *http.Request) {
+	min := MinMsg{Min: s.replica.Min()}
+	js, _ := json.Marshal(min)
 	w.Header().Set("Content-type", "application/json")
 	w.Write(js)
 }
