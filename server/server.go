@@ -28,7 +28,6 @@ type MinMsg struct {
 }
 
 type StartMsg struct {
-	Seq   int
 	Value interface{}
 }
 
@@ -79,12 +78,12 @@ func (s *Server) Start() {
 	min.Methods("GET").HandlerFunc(s.HandleMin)
 
 	// _start
-	start := r.Path("/_start").Subrouter()
+	start := r.Path("/{seq}/_start").Subrouter()
 	start.Methods("POST").HandlerFunc(s.HandleStart)
 
 	// _status
-	status := r.Path("/_status").Subrouter()
-	status.Methods("POST").HandlerFunc(s.HandleStatus)
+	status := r.Path("/{seq}/_status").Subrouter()
+	status.Methods("GET").HandlerFunc(s.HandleStatus)
 
 	http.ListenAndServe(buildAddr(s.addr, serverPort), r)
 }
@@ -110,24 +109,30 @@ func (s *Server) HandleStart(w http.ResponseWriter, req *http.Request) {
 		writeJson(w, js)
 	}
 
-	s.replica.Start(msg.Seq, msg.Value)
+	vars := mux.Vars(req)
+	seq, _ := strconv.Atoi(vars["seq"])
+	if seq < s.replica.Min() {
+		js, _ := json.Marshal(AckMsg{false})
+		writeJson(w, js)
+	}
+
+	s.replica.Start(seq, msg.Value)
 
 	js, _ := json.Marshal(AckMsg{true})
 	writeJson(w, js)
 }
 
 func (s *Server) HandleStatus(w http.ResponseWriter, req *http.Request) {
-	decoder := json.NewDecoder(req.Body)
-	var q QueryMsg
-	err := decoder.Decode(&q)
-	if err != nil {
+	vars := mux.Vars(req)
+	seq, _ := strconv.Atoi(vars["seq"])
+	if seq < s.replica.Min() {
 		js, _ := json.Marshal(AckMsg{false})
 		writeJson(w, js)
 	}
 
-	ok, value := s.replica.Status(q.Seq)
+	ok, value := s.replica.Status(seq)
 	var res StatusResponse
-	res.Seq = q.Seq
+	res.Seq = seq
 	res.Status = ok
 	if ok == true {
 		res.Value = value
