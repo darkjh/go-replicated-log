@@ -3,6 +3,7 @@ package server
 import "strconv"
 import "net/http"
 import "encoding/json"
+import "fmt"
 import "github.com/darkjh/go-replicated-log/paxos"
 import "github.com/gorilla/mux"
 
@@ -35,14 +36,15 @@ type AckMsg struct {
 	Ack bool
 }
 
-type QueryMsg struct {
-	Seq int
-}
-
 type StatusResponse struct {
 	Seq    int
 	Status bool
 	Value  interface{}
+}
+
+type SequenceError struct {
+	Error string
+	Min   int
 }
 
 func buildAddr(addr string, port int) string {
@@ -85,6 +87,10 @@ func (s *Server) Start() {
 	status := r.Path("/{seq}/_status").Subrouter()
 	status.Methods("GET").HandlerFunc(s.handleStatus)
 
+	// _done
+	done := r.Path("/{seq}/_done").Subrouter()
+	done.Methods("POST").HandlerFunc(s.handleDone)
+
 	http.ListenAndServe(buildAddr(s.addr, serverPort), r)
 }
 
@@ -107,15 +113,11 @@ func (s *Server) handleStart(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		js, _ := json.Marshal(AckMsg{false})
 		writeJson(w, js)
+		return
 	}
 
 	vars := mux.Vars(req)
 	seq, _ := strconv.Atoi(vars["seq"])
-	if seq < s.replica.Min() {
-		js, _ := json.Marshal(AckMsg{false})
-		writeJson(w, js)
-	}
-
 	s.replica.Start(seq, msg.Value)
 
 	js, _ := json.Marshal(AckMsg{true})
@@ -126,8 +128,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	seq, _ := strconv.Atoi(vars["seq"])
 	if seq < s.replica.Min() {
-		js, _ := json.Marshal(AckMsg{false})
+		js, _ := json.Marshal(
+			SequenceError{
+				fmt.Sprintf("Sequence number %d is not valid", seq),
+				s.replica.Min(),
+			})
 		writeJson(w, js)
+		return
 	}
 
 	ok, value := s.replica.Status(seq)
@@ -139,6 +146,25 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 	}
 
 	js, _ := json.Marshal(res)
+	writeJson(w, js)
+}
+
+func (s *Server) handleDone(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	seq, _ := strconv.Atoi(vars["seq"])
+	if seq < s.replica.Min() {
+		js, _ := json.Marshal(
+			SequenceError{
+				fmt.Sprintf("Sequence number %d is not valid", seq),
+				s.replica.Min(),
+			})
+		writeJson(w, js)
+		return
+	}
+
+	s.replica.Done(seq)
+
+	js, _ := json.Marshal(AckMsg{true})
 	writeJson(w, js)
 }
 
