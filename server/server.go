@@ -71,36 +71,36 @@ func (s *Server) Start() {
 
 	// _max
 	max := r.Path("/_max").Subrouter()
-	max.Methods("GET").HandlerFunc(s.HandleMax)
+	max.Methods("GET").HandlerFunc(s.handleMax)
 
 	// _min
 	min := r.Path("/_min").Subrouter()
-	min.Methods("GET").HandlerFunc(s.HandleMin)
+	min.Methods("GET").HandlerFunc(s.handleMin)
 
 	// _start
 	start := r.Path("/{seq}/_start").Subrouter()
-	start.Methods("POST").HandlerFunc(s.HandleStart)
+	start.Methods("POST").HandlerFunc(s.handleStart)
 
 	// _status
 	status := r.Path("/{seq}/_status").Subrouter()
-	status.Methods("GET").HandlerFunc(s.HandleStatus)
+	status.Methods("GET").HandlerFunc(s.handleStatus)
 
 	http.ListenAndServe(buildAddr(s.addr, serverPort), r)
 }
 
-func (s *Server) HandleMax(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleMax(w http.ResponseWriter, req *http.Request) {
 	max := MaxMsg{Max: s.replica.Max()}
 	js, _ := json.Marshal(max)
 	writeJson(w, js)
 }
 
-func (s *Server) HandleMin(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleMin(w http.ResponseWriter, req *http.Request) {
 	min := MinMsg{Min: s.replica.Min()}
 	js, _ := json.Marshal(min)
 	writeJson(w, js)
 }
 
-func (s *Server) HandleStart(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleStart(w http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
 	var msg StartMsg
 	err := decoder.Decode(&msg)
@@ -122,7 +122,7 @@ func (s *Server) HandleStart(w http.ResponseWriter, req *http.Request) {
 	writeJson(w, js)
 }
 
-func (s *Server) HandleStatus(w http.ResponseWriter, req *http.Request) {
+func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	seq, _ := strconv.Atoi(vars["seq"])
 	if seq < s.replica.Min() {
